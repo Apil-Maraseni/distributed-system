@@ -3,55 +3,194 @@ import java.net.*;
 import java.util.Scanner;
 
 public class FileClient {
-    public static void main(String[] args) throws IOException {
+
+    private static final String SERVER = "localhost";
+    private static final int PORT = 5000;
+
+    public static void main(String[] args) {
+
         Scanner sc = new Scanner(System.in);
 
         while (true) {
-            System.out.println("\nDistributed File System Client");
+
+            System.out.println("\n===== Distributed File System Client =====");
             System.out.println("1. Upload File");
             System.out.println("2. Download File");
             System.out.println("3. Edit File");
             System.out.println("4. Exit");
-            System.out.print("Choose an option: ");
+            System.out.print("Enter choice: ");
+
             int choice = sc.nextInt();
-            sc.nextLine(); // consume newline
+            sc.nextLine();
 
-            if (choice == 4) break;
-
-            System.out.print("Enter filename: ");
-            String filename = sc.nextLine().trim();
-            String command = "";
-
-            if (choice == 1) {
-                System.out.print("Enter file content to upload: ");
-                String content = sc.nextLine();
-                command = "UPLOAD|" + filename + "|" + content;
-            } else if (choice == 2) {
-                command = "DOWNLOAD|" + filename;
-            } else if (choice == 3) {
-                System.out.print("Enter new content to edit: ");
-                String newContent = sc.nextLine();
-                command = "EDIT|" + filename + "|" + newContent;
-            } else {
-                System.out.println("Invalid choice. Try again.");
-                continue;
-            }
+            if (choice == 4)
+                break;
 
             try {
-                Socket socket = new Socket("localhost", 5000);
-                PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
-                BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
 
-                out.println(command);
-                String response = in.readLine();
-                System.out.println("Server Response: " + response);
+                Socket socket = new Socket(SERVER, PORT);
+
+                DataInputStream in =
+                        new DataInputStream(socket.getInputStream());
+
+                DataOutputStream out =
+                        new DataOutputStream(socket.getOutputStream());
+
+                switch (choice) {
+
+                    case 1:
+                        uploadFile(sc, in, out);
+                        break;
+
+                    case 2:
+                        downloadFile(sc, in, out);
+                        break;
+
+                    case 3:
+                        editFile(sc, in, out);
+                        break;
+
+                    default:
+                        System.out.println("Invalid Choice");
+                }
 
                 socket.close();
-            } catch (IOException e) {
-                System.out.println("Could not connect to server: " + e.getMessage());
+
+            } catch (Exception e) {
+
+                System.out.println(e.getMessage());
+
             }
+
         }
 
         sc.close();
+
     }
+
+private static void uploadFile(Scanner sc,
+                               DataInputStream in,
+                               DataOutputStream out)
+        throws IOException {
+
+    System.out.print("Enter filename (inside uploads folder): ");
+    String filename = sc.nextLine();
+
+    File folder = new File("uploads");
+    if (!folder.exists()) {
+        folder.mkdir();
+    }
+
+    File file = new File(folder, filename);
+
+    if (!file.exists()) {
+
+        System.out.print("File does not exist. Create it? (Y/N): ");
+        String choice = sc.nextLine();
+
+        if (!choice.equalsIgnoreCase("Y")) {
+            return;
+        }
+
+        file.createNewFile();
+
+        System.out.println("Enter file content (Press Enter when finished):");
+        String content = sc.nextLine();
+
+        FileWriter writer = new FileWriter(file);
+        writer.write(content);
+        writer.close();
+
+        System.out.println("File created successfully in uploads folder.");
+    }
+
+    out.writeUTF("UPLOAD");
+    out.writeUTF(filename);
+    out.writeLong(file.length());
+
+    FileInputStream fis = new FileInputStream(file);
+
+    byte[] buffer = new byte[4096];
+    int count;
+
+    while ((count = fis.read(buffer)) > 0) {
+        out.write(buffer, 0, count);
+    }
+
+    fis.close();
+
+    System.out.println(in.readUTF());
+}
+
+
+    private static void downloadFile(Scanner sc,
+                                     DataInputStream in,
+                                     DataOutputStream out)
+            throws IOException {
+
+        System.out.print("Enter filename: ");
+
+        String filename = sc.nextLine();
+
+        out.writeUTF("DOWNLOAD");
+
+        out.writeUTF(filename);
+
+        boolean exists = in.readBoolean();
+
+        if (!exists) {
+
+            System.out.println("File not found on server.");
+            return;
+
+        }
+
+        long size = in.readLong();
+
+        File file = new File("downloads/" + filename);
+
+        FileOutputStream fos = new FileOutputStream(file);
+
+        byte[] buffer = new byte[4096];
+
+        while (size > 0) {
+
+            int bytes = in.read(buffer, 0,
+                    (int) Math.min(buffer.length, size));
+
+            fos.write(buffer, 0, bytes);
+
+            size -= bytes;
+
+        }
+
+        fos.close();
+
+        System.out.println("Downloaded successfully.");
+
+    }
+
+    private static void editFile(Scanner sc,
+                                 DataInputStream in,
+                                 DataOutputStream out)
+            throws IOException {
+
+        System.out.print("Enter filename: ");
+
+        String filename = sc.nextLine();
+
+        System.out.print("Enter new content: ");
+
+        String content = sc.nextLine();
+
+        out.writeUTF("EDIT");
+
+        out.writeUTF(filename);
+
+        out.writeUTF(content);
+
+        System.out.println(in.readUTF());
+
+    }
+
 }

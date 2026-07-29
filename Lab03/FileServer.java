@@ -1,13 +1,20 @@
 import java.io.*;
 import java.net.*;
-import java.util.HashMap;
 
 public class FileServer {
-    private static HashMap<String, String> files = new HashMap<>();
+
+    private static final int PORT = 5000;
+    private static final String STORAGE = "server_storage";
 
     public static void main(String[] args) throws IOException {
-        ServerSocket serverSocket = new ServerSocket(5000);
-        System.out.println("File Server is running on port 5000...");
+
+        File folder = new File(STORAGE);
+        if (!folder.exists())
+            folder.mkdir();
+
+        ServerSocket serverSocket = new ServerSocket(PORT);
+
+        System.out.println("Server started on port " + PORT);
 
         while (true) {
             Socket socket = serverSocket.accept();
@@ -16,61 +23,124 @@ public class FileServer {
     }
 
     private static void handleClient(Socket socket) {
+
         try {
-            BufferedReader in = new BufferedReader(new InputStreamReader(socket.getInputStream()));
-            PrintWriter out = new PrintWriter(socket.getOutputStream(), true);
 
-            String request = in.readLine(); // format: COMMAND|FILENAME|CONTENT (optional)
-            if (request == null) {
-                out.println("Invalid request.");
-                return;
-            }
+            DataInputStream in =
+                    new DataInputStream(socket.getInputStream());
 
-            String[] parts = request.split("\\|", 3);
-            if (parts.length < 2) {
-                out.println("Invalid command format.");
-                return;
-            }
+            DataOutputStream out =
+                    new DataOutputStream(socket.getOutputStream());
 
-            String command = parts[0].trim();
-            String filename = parts[1].trim();
+            String command = in.readUTF();
 
             switch (command) {
+
                 case "UPLOAD":
-                    if (parts.length < 3) {
-                        out.println("Missing content for UPLOAD.");
-                        break;
-                    }
-                    String content = parts[2];
-                    files.put(filename, content);
-                    out.println("File '" + filename + "' uploaded successfully.");
+                    uploadFile(in, out);
                     break;
 
                 case "DOWNLOAD":
-                    out.println(files.getOrDefault(filename, "Error: File not found."));
+                    downloadFile(in, out);
                     break;
 
                 case "EDIT":
-                    if (parts.length < 3) {
-                        out.println("Missing content for EDIT.");
-                        break;
-                    }
-                    if (files.containsKey(filename)) {
-                        String newContent = parts[2];
-                        files.put(filename, newContent);
-                        out.println("File '" + filename + "' edited successfully.");
-                    } else {
-                        out.println("Error: File does not exist.");
-                    }
+                    editFile(in, out);
                     break;
 
                 default:
-                    out.println("Invalid command.");
+                    out.writeUTF("Invalid Command");
             }
 
             socket.close();
-        } catch (IOException e) {
+
+        } catch (Exception e) {
             e.printStackTrace();
         }
+
+    }
+
+    private static void uploadFile(DataInputStream in,
+                                   DataOutputStream out)
+            throws IOException {
+
+        String filename = in.readUTF();
+
+        long size = in.readLong();
+
+        File file = new File(STORAGE + "/" + filename);
+
+        FileOutputStream fos = new FileOutputStream(file);
+
+        byte[] buffer = new byte[4096];
+
+        while (size > 0) {
+
+            int bytes = in.read(buffer, 0,
+                    (int) Math.min(buffer.length, size));
+
+            fos.write(buffer, 0, bytes);
+
+            size -= bytes;
+        }
+
+        fos.close();
+
+        out.writeUTF("Upload Successful");
+    }
+
+    private static void downloadFile(DataInputStream in,
+                                     DataOutputStream out)
+            throws IOException {
+
+        String filename = in.readUTF();
+
+        File file = new File(STORAGE + "/" + filename);
+
+        if (!file.exists()) {
+
+            out.writeBoolean(false);
+            return;
+
+        }
+
+        out.writeBoolean(true);
+
+        out.writeLong(file.length());
+
+        FileInputStream fis = new FileInputStream(file);
+
+        byte[] buffer = new byte[4096];
+
+        int count;
+
+        while ((count = fis.read(buffer)) > 0) {
+
+            out.write(buffer, 0, count);
+
+        }
+
+        fis.close();
+
+    }
+
+    private static void editFile(DataInputStream in,
+                                 DataOutputStream out)
+            throws IOException {
+
+        String filename = in.readUTF();
+
+        String newContent = in.readUTF();
+
+        File file = new File(STORAGE + "/" + filename);
+
+        if (!file.exists()) {
+            out.writeUTF("File Not Found");
+            return;
+        }
+        FileWriter writer = new FileWriter(file);
+        writer.write(newContent);
+        writer.close();
+        out.writeUTF("File Edited Successfully");
     }
 }
